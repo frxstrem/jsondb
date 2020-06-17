@@ -1,5 +1,5 @@
+use itertools::Itertools;
 use serde::{de::DeserializeOwned, Serialize};
-use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
@@ -9,7 +9,7 @@ use crate::record::{Record, RecordData, RecordId};
 pub struct Database<T: Serialize + DeserializeOwned, S: Read + Seek> {
     stream: BufReader<S>,
     offset: u64,
-    data: BTreeMap<RecordId, RecordData<T>>,
+    records: Vec<Record<T>>,
     next_record_id: RecordId,
 }
 
@@ -25,7 +25,7 @@ impl<T: Serialize + DeserializeOwned> Database<T, File> {
         Ok(Database {
             stream,
             offset: 0,
-            data: BTreeMap::new(),
+            records: Vec::new(),
             next_record_id: 1,
         })
     }
@@ -38,7 +38,7 @@ impl<T: Serialize + DeserializeOwned, S: Read + Seek> Database<T, S> {
         Ok(Database {
             stream,
             offset,
-            data: BTreeMap::new(),
+            records: Vec::new(),
             next_record_id: 1,
         })
     }
@@ -52,14 +52,7 @@ impl<T: Serialize + DeserializeOwned, S: Read + Seek> Database<T, S> {
         if record.id() >= self.next_record_id {
             self.next_record_id = record.id() + 1;
         }
-        match record {
-            Record::Upsert(record) => {
-                self.data.insert(record.id(), record.data);
-            }
-            Record::Delete(record) => {
-                self.data.remove(&record.id());
-            }
-        }
+        self.records.push(record);
     }
 
     fn read_next(&mut self) -> io::Result<Option<Record<T>>> {
@@ -87,15 +80,35 @@ impl<T: Serialize + DeserializeOwned, S: Read + Seek> Database<T, S> {
     }
 
     pub fn records(&self) -> impl Iterator<Item = &RecordData<T>> {
-        self.data.values()
+        let mut items = self
+            .records
+            .iter()
+            .rev()
+            .unique_by(|record| record.id())
+            .filter_map(Record::data)
+            .collect::<Vec<_>>();
+        items.sort_by_key(|data| data.id);
+        items.into_iter()
+    }
+
+    pub fn records_include_deleted(&self) -> impl Iterator<Item = &RecordData<T>> {
+        let mut items = self
+            .records
+            .iter()
+            .rev()
+            .filter_map(Record::data)
+            .unique_by(|record| record.id)
+            .collect::<Vec<_>>();
+        items.sort_by_key(|data| data.id);
+        items.into_iter()
     }
 
     pub fn record_count(&self) -> usize {
-        self.data.len()
+        self.records().count()
     }
 
     pub fn get(&self, id: RecordId) -> Option<&RecordData<T>> {
-        self.data.get(&id)
+        self.records().find(|record| record.id == id)
     }
 }
 
@@ -142,7 +155,7 @@ impl<T: Serialize + DeserializeOwned, S: Read + Write + Seek> Database<T, S> {
     where
         F: FnOnce(Option<&T>) -> Option<T>,
     {
-        let data = self.data.get(&id).map(|record_data| &record_data.data);
+        let data = self.get(id).map(|record_data| &record_data.data);
 
         match f(data) {
             Some(new_data) => self.write_record(Record::upsert(id, new_data))?,

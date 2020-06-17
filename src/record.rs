@@ -23,13 +23,18 @@ impl<T> Record<T> {
     pub const fn delete(id: RecordId) -> Record<T> {
         Record::Delete(DeleteRecord { id, deleted: True })
     }
-}
 
-impl<T> Record<T> {
     pub fn id(&self) -> RecordId {
         match self {
             Record::Upsert(record) => record.id(),
             Record::Delete(record) => record.id(),
+        }
+    }
+
+    pub fn data(&self) -> Option<&RecordData<T>> {
+        match self {
+            Record::Upsert(UpsertRecord { data, .. }) => Some(&data),
+            Record::Delete(_) => None,
         }
     }
 }

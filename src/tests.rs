@@ -25,16 +25,44 @@ fn read_test() {
 
     database.reload().unwrap();
 
-    let entries = database.records().collect::<Vec<_>>();
-
     assert_eq!(
-        entries,
+        database.records().collect::<Vec<_>>(),
         vec![
             &RecordData {
                 id: 1,
                 data: MyObject {
                     a: "qwe".into(),
                     b: 9,
+                    c: None
+                }
+            },
+            &RecordData {
+                id: 3,
+                data: MyObject {
+                    a: "hello".into(),
+                    b: 0,
+                    c: None
+                }
+            }
+        ],
+    );
+
+    assert_eq!(
+        database.records_include_deleted().collect::<Vec<_>>(),
+        vec![
+            &RecordData {
+                id: 1,
+                data: MyObject {
+                    a: "qwe".into(),
+                    b: 9,
+                    c: None
+                }
+            },
+            &RecordData {
+                id: 2,
+                data: MyObject {
+                    a: "bar".into(),
+                    b: 66,
                     c: None
                 }
             },
@@ -98,11 +126,47 @@ fn write_test() {
         })
         .unwrap();
 
-    let entries = database.records().collect::<Vec<_>>();
+    assert_eq!(
+        database.records().collect::<Vec<_>>(),
+        vec![
+            &RecordData {
+                id: 3,
+                data: MyObject {
+                    a: "hello".into(),
+                    b: 0,
+                    c: Some(123)
+                }
+            },
+            &RecordData {
+                id: 4,
+                data: MyObject {
+                    a: "beep".into(),
+                    b: 1,
+                    c: Some(2)
+                }
+            },
+        ],
+    );
 
     assert_eq!(
-        entries,
+        database.records_include_deleted().collect::<Vec<_>>(),
         vec![
+            &RecordData {
+                id: 1,
+                data: MyObject {
+                    a: "qwe".into(),
+                    b: 9,
+                    c: None
+                }
+            },
+            &RecordData {
+                id: 2,
+                data: MyObject {
+                    a: "bar".into(),
+                    b: 66,
+                    c: None
+                }
+            },
             &RecordData {
                 id: 3,
                 data: MyObject {
