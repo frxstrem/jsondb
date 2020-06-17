@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::ops::{Deref, DerefMut};
 
 use crate::boolean::{False, True};
 
@@ -38,6 +39,20 @@ pub struct RecordData<T> {
     pub id: RecordId,
     #[serde(flatten)]
     pub data: T,
+}
+
+impl<T> Deref for RecordData<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.data
+    }
+}
+
+impl<T> DerefMut for RecordData<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.data
+    }
 }
 
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
