@@ -1,6 +1,6 @@
 use itertools::Itertools;
 use serde::{de::DeserializeOwned, Serialize};
-use std::fs::{File, OpenOptions};
+use std::fs::{self, File};
 use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
@@ -15,10 +15,17 @@ pub struct Database<T: Serialize + DeserializeOwned, S: Read + Seek> {
 
 impl<T: Serialize + DeserializeOwned> Database<T, File> {
     pub fn open(path: impl AsRef<Path>) -> io::Result<Database<T, File>> {
-        let file = OpenOptions::new()
-            .create(true)
+        Database::open_with_opts(path, OpenOptions::new())
+    }
+
+    pub fn open_with_opts(
+        path: impl AsRef<Path>,
+        opts: OpenOptions,
+    ) -> io::Result<Database<T, File>> {
+        let file = fs::OpenOptions::new()
+            .create(!opts.read_only)
             .read(true)
-            .append(true)
+            .append(!opts.read_only)
             .open(path)?;
         let stream = BufReader::new(file);
 
@@ -168,5 +175,29 @@ impl<T: Serialize + DeserializeOwned, S: Read + Write + Seek> Database<T, S> {
 
     pub fn delete(&mut self, id: RecordId) -> io::Result<()> {
         self.write_record(Record::delete(id))
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct OpenOptions {
+    read_only: bool,
+}
+
+impl OpenOptions {
+    pub const fn new() -> OpenOptions {
+        OpenOptions { read_only: false }
+    }
+
+    pub fn open<T: Serialize + DeserializeOwned>(
+        self,
+        path: impl AsRef<Path>,
+    ) -> io::Result<Database<T, File>> {
+        Database::open_with_opts(path, self)
+    }
+}
+
+impl Default for OpenOptions {
+    fn default() -> OpenOptions {
+        OpenOptions::new()
     }
 }
