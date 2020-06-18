@@ -180,12 +180,17 @@ impl<T: Serialize + DeserializeOwned, S: Read + Write + Seek> Database<T, S> {
 
 #[derive(Clone, Debug)]
 pub struct OpenOptions {
-    read_only: bool,
+    pub read_only: bool,
 }
 
 impl OpenOptions {
     pub const fn new() -> OpenOptions {
         OpenOptions { read_only: false }
+    }
+
+    pub const fn read_only(mut self, read_only: bool) -> Self {
+        self.read_only = read_only;
+        self
     }
 
     pub fn open<T: Serialize + DeserializeOwned>(
