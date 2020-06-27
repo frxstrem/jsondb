@@ -29,12 +29,15 @@ impl<T: Serialize + DeserializeOwned> Database<T, File> {
             .open(path)?;
         let stream = BufReader::new(file);
 
-        Ok(Database {
+        let mut database = Database {
             stream,
             offset: 0,
             records: Vec::new(),
             next_record_id: 1,
-        })
+        };
+
+        database.reload()?;
+        Ok(database)
     }
 }
 
@@ -193,9 +196,9 @@ impl OpenOptions {
         self
     }
 
-    pub fn open<T: Serialize + DeserializeOwned>(
+    pub fn open<T: Serialize + DeserializeOwned, P: AsRef<Path>>(
         self,
-        path: impl AsRef<Path>,
+        path: P,
     ) -> io::Result<Database<T, File>> {
         Database::open_with_opts(path, self)
     }
