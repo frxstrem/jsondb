@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["Record",""]],"struct":[["Database",""],["DeleteRecord",""],["False",""],["OpenOptions",""],["RecordData",""],["True",""],["UpsertRecord",""]],"type":[["RecordId",""]]});
