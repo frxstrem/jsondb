@@ -4,16 +4,29 @@ use std::fs::{self, File};
 use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
-use crate::record::{Record, RecordData, RecordId};
+use crate::{
+    cache_tag::{CacheTag, DefaultCacheTag},
+    record::{Record, RecordData, RecordId},
+};
 
-pub struct Database<T: Serialize + DeserializeOwned, S: Read + Seek> {
+pub struct Database<T, S, C = DefaultCacheTag>
+where
+    T: Serialize + DeserializeOwned,
+    S: Read + Seek,
+    C: CacheTag<Record<T>>,
+{
     stream: BufReader<S>,
     offset: u64,
     records: Vec<Record<T>>,
     next_record_id: RecordId,
+
+    cache_tag: C,
 }
 
-impl<T: Serialize + DeserializeOwned> Database<T, File> {
+impl<T> Database<T, File>
+where
+    T: Serialize + DeserializeOwned,
+{
     pub fn open(path: impl AsRef<Path>) -> io::Result<Database<T, File>> {
         Database::open_with_opts(path, OpenOptions::new())
     }
@@ -34,6 +47,7 @@ impl<T: Serialize + DeserializeOwned> Database<T, File> {
             offset: 0,
             records: Vec::new(),
             next_record_id: 1,
+            cache_tag: DefaultCacheTag::default(),
         };
 
         database.reload()?;
@@ -41,27 +55,58 @@ impl<T: Serialize + DeserializeOwned> Database<T, File> {
     }
 }
 
-impl<T: Serialize + DeserializeOwned, S: Read + Seek> Database<T, S> {
+impl<T, S> Database<T, S>
+where
+    T: Serialize + DeserializeOwned,
+    S: Read + Seek,
+{
     pub fn new(mut stream: S) -> io::Result<Database<T, S>> {
-        let offset = stream.seek(SeekFrom::Current(0))?;
+        let offset = stream.stream_position()?;
         let stream = BufReader::new(stream);
         Ok(Database {
             stream,
             offset,
             records: Vec::new(),
             next_record_id: 1,
+            cache_tag: DefaultCacheTag::default(),
         })
     }
+}
 
+impl<T, S, C> Database<T, S, C>
+where
+    T: Serialize + DeserializeOwned,
+    S: Read + Seek,
+    C: CacheTag<Record<T>>,
+{
     pub fn close(self) -> io::Result<()> {
         drop(self);
         Ok(())
+    }
+
+    pub fn with_cache_tag<C2: CacheTag<Record<T>>>(self, mut cache_tag: C2) -> Database<T, S, C2> {
+        for record in &self.records {
+            cache_tag.process_value(record);
+        }
+
+        Database {
+            stream: self.stream,
+            offset: self.offset,
+            records: self.records,
+            next_record_id: self.next_record_id,
+            cache_tag,
+        }
+    }
+
+    pub fn cache_tag(&self) -> u64 {
+        self.cache_tag.tag()
     }
 
     fn handle_record(&mut self, record: Record<T>) {
         if record.id() >= self.next_record_id {
             self.next_record_id = record.id() + 1;
         }
+        self.cache_tag.process_value(&record);
         self.records.push(record);
     }
 
@@ -71,7 +116,7 @@ impl<T: Serialize + DeserializeOwned, S: Read + Seek> Database<T, S> {
 
         // read next record
         let record = d.next().transpose()?;
-        self.offset = self.stream.seek(SeekFrom::Current(0))?;
+        self.offset = self.stream.stream_position()?;
 
         Ok(record)
     }
@@ -122,9 +167,15 @@ impl<T: Serialize + DeserializeOwned, S: Read + Seek> Database<T, S> {
     }
 }
 
-impl<T: Serialize + DeserializeOwned, S: Read + Write + Seek> Database<T, S> {
+impl<T, S, C> Database<T, S, C>
+where
+    T: Serialize + DeserializeOwned,
+    S: Read + Write + Seek,
+    C: CacheTag<Record<T>>,
+{
     fn writer(&mut self) -> io::Result<BufWriter<&mut S>> {
         // reset buffer
+        #[allow(clippy::seek_from_current)]
         self.stream.seek(SeekFrom::Current(0))?;
 
         // return inner
